@@ -162,6 +162,18 @@ export default function VoicebotSidebar({ open, onClose, onThemeChange, onReset 
 
         <WaveVisualizer levelRef={speech.levelRef} active={speech.listening || speech.speaking} />
 
+        {speech.error && (
+          <div className="ai-notice" role="alert">
+            <span>⚠️ {speech.error}</span>
+            <button onClick={speech.clearError} aria-label="Dismiss">✕</button>
+          </div>
+        )}
+        {!speech.supported && (
+          <div className="ai-notice">
+            <span>🎙 Voice input needs Chrome, Edge or Safari. You can still type below.</span>
+          </div>
+        )}
+
         <div className="ai-chat" ref={chatRef}>
           {messages.map((m) => {
             if (m.role === 'doc') {

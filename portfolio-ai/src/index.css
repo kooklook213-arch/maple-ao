@@ -118,7 +118,8 @@ input, textarea { font-family: inherit; }
 .btn.icon { padding: 0.7rem 0.9rem; font-size: 1.1rem; line-height: 1; }
 
 .hud {
-  position: absolute; left: clamp(1rem, 4vw, 2rem); bottom: 1.2rem; z-index: 1;
+  position: absolute; left: clamp(1rem, 4vw, 2rem); bottom: 1.2rem; z-index: 3;
+  pointer-events: none; /* never intercept cursor/touch events over the canvas */
   font-size: 0.72rem; color: var(--muted);
   background: var(--panel); border: 1px solid var(--border);
   padding: 0.5rem 0.8rem; border-radius: 10px; backdrop-filter: blur(8px);
@@ -207,6 +208,15 @@ footer.site-footer { padding: 2.4rem clamp(1.2rem, 6vw, 6rem); color: var(--mute
 .ai-close:hover { color: var(--text); border-color: var(--accent); }
 
 /* Visualizer */
+.ai-notice {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  margin: .6rem 1.1rem 0; padding: .55rem .75rem;
+  font-size: .74rem; line-height: 1.35; color: var(--text);
+  background: var(--accent-soft); border: 1px solid var(--border); border-radius: 10px;
+}
+.ai-notice button { background: none; border: none; color: var(--muted); font-size: .8rem; padding: 2px 4px; }
+.ai-notice button:hover { color: var(--text); }
+
 .ai-viz { height: 46px; display: flex; align-items: center; justify-content: center; gap: 3px; border-bottom: 1px solid var(--border); padding: 0 1rem; }
 .ai-viz .bar {
   width: 4px; height: 6px; border-radius: 4px;

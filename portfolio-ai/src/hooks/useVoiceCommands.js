@@ -26,8 +26,9 @@ export default function useVoiceCommands({ onTheme, onReset }) {
       const theme = resolveTheme(m[1]);
       if (theme) { cbRef.current.onTheme?.(theme); return { type: 'theme', theme }; }
     }
-    if (/^(theme|palette)\s+([\w\s-]+)$/.test(text)) {
-      const theme = resolveTheme(RegExp.$2);
+    const pm = text.match(/^(?:theme|palette)\s+([\w\s-]+)$/);
+    if (pm) {
+      const theme = resolveTheme(pm[1]);
       if (theme) { cbRef.current.onTheme?.(theme); return { type: 'theme', theme }; }
     }
 

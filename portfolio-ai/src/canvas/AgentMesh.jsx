@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 
@@ -190,8 +189,10 @@ export default function AgentMesh({ theme, resetSignal }) {
   }, [resetSignal]);
 
   const geometry = useMemo(() => {
-    // detail 32 (~20k verts) keeps the displacement smooth on mobile GPUs too
-    const geo = new THREE.IcosahedronGeometry(1.05, 32);
+    // NOTE: IcosahedronGeometry detail is subdivision level — detail 32 would
+    // explode to ~47M triangles and hard-crash the WebGL context (black page).
+    // detail 6 (~20k verts) keeps displacement smooth even on mobile GPUs.
+    const geo = new THREE.IcosahedronGeometry(1.05, 6);
     geo.computeVertexNormals();
     return geo;
   }, []);
@@ -282,21 +283,21 @@ export default function AgentMesh({ theme, resetSignal }) {
         </points>
       </group>
       {/* live cursor-speed telemetry overlay */}
-      <Html hud target={hud} />
+      <Hud target={hud} />
     </>
   );
 }
 
-/* Tiny helper so the HUD lives next to the canvas component. */
-function Html({ target }) {
+/* HUD is rendered INSIDE the hero canvas wrapper (never portaled to
+   document.body — that injected a fixed dark layer over the whole page). */
+function Hud({ target }) {
   const pct = Math.round((target.energy || 0) * 100);
   const hue = Math.round(210 - (target.energy || 0) * 180); // blue -> red shift
-  return createPortal(
+  return (
     <div className="hud" aria-live="polite">
       <span>SPEED <b style={{ color: `hsl(${hue} 90% 65%)` }}>{pct}%</b></span>
       <span>FPS <b>{target.fps}</b></span>
       <span>STATE <b>{pct > 65 ? 'HYPER' : pct > 25 ? 'FLOW' : 'CALM'}</b></span>
-    </div>,
-    document.body,
+    </div>
   );
 }
