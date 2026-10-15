@@ -135,7 +135,7 @@ export default function AgentMesh({ theme, resetSignal }) {
   const coreRef = useRef();
   const partRef = useRef();
   const groupRef = useRef();
-  const { size, viewport } = useThree();
+  const { viewport } = useThree();
 
   // mutable interaction state (never triggers React re-renders)
   const state = useRef({
@@ -167,17 +167,25 @@ export default function AgentMesh({ theme, resetSignal }) {
   }), [theme]);
 
   // ---- pointer tracking with real-time speed -> energy calculation ----
+  // NOTE: must use VIEWPORT coordinates (window.innerWidth/Height), not the
+  // canvas size prop — the hero canvas is only part of the page, so dividing
+  // clientY by the canvas height pushed uMouse far outside NDC range, which
+  // made the cursor-warp term (exp(-md*2.6)) collapse to ~0 everywhere and
+  // the mesh looked dead/black.
   useEffect(() => {
     const onMove = (cx, cy) => {
       const s = state.current;
-      s.target.set((cx / size.width) * 2 - 1, -(cy / size.height) * 2 + 1);
+      s.target.set(
+        (cx / Math.max(1, window.innerWidth)) * 2 - 1,
+        -(cy / Math.max(1, window.innerHeight)) * 2 + 1,
+      );
     };
     const mm = (e) => onMove(e.clientX, e.clientY);
     const tm = (e) => { const t = e.touches[0]; if (t) onMove(t.clientX, t.clientY); };
     window.addEventListener('pointermove', mm);
     window.addEventListener('touchmove', tm, { passive: true });
     return () => { window.removeEventListener('pointermove', mm); window.removeEventListener('touchmove', tm); };
-  }, [size]);
+  }, []);
 
   // ---- "Reset" hotword: ease everything back to baseline ----
   useEffect(() => {
@@ -220,8 +228,12 @@ export default function AgentMesh({ theme, resetSignal }) {
 
     // cursor velocity (px/frame in NDC units) -> smoothed energy 0..1
     const dx = s.target.x - s.last.x, dy = s.target.y - s.last.y;
-    const speed = Math.min(1, Math.hypot(dx, dy) / Math.max(delta, 0.0001) * 0.28);
-    s.energy += (speed - s.energy) * Math.min(1, delta * 4.5);
+    // clamp delta: after a tab-switch back, `delta` can be huge (seconds),
+    // which would divide the movement by a giant dt and spike SPEED% to 100
+    // for no reason (mesh flares red then looks broken).
+    const dt = Math.min(Math.max(delta, 0.001), 0.1);
+    const speed = Math.min(1, Math.hypot(dx, dy) / dt * 0.28);
+    s.energy += (speed - s.energy) * Math.min(1, dt * 4.5);
     s.last.copy(s.target);
 
     // eased mouse follow (mesh shifts & rotates toward cursor)

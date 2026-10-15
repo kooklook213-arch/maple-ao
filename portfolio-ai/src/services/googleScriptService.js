@@ -16,32 +16,49 @@ const GOOGLE_SCRIPT_URL =
 
 /**
  * Low-level POST to the Apps Script Web App.
- * Apps Script redirects /exec -> googleusercontent.com; following redirects
- * with mode 'cors' can throw on some browsers, so we try cors first and fall
- * back to 'no-cors' best-effort ping.
+ * Apps Script /exec 302-redirects to googleusercontent.com without CORS
+ * headers, so we POST as a no-cors simple request (payload always lands) and
+ * recover createDoc results by polling the Web App's GET listRecent action.
  */
 export async function callGoogleScript(payload) {
   const body = JSON.stringify(payload);
 
-  // Preferred: text/plain avoids a CORS preflight against Apps Script.
   try {
-    const res = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body,
-      redirect: 'follow',
-    });
-    const text = await res.text();
-    try { return JSON.parse(text); } catch { return { ok: true, raw: text }; }
+    // Apps Script /exec 302-redirects to googleusercontent.com, which does NOT
+    // re-send CORS headers -> a 'cors' fetch usually throws even when the Web
+    // App itself is fine. So we POST as 'text/plain' (simple request, no
+    // preflight) with mode:'no-cors': the payload ALWAYS reaches your script;
+    // the response is just opaque. Then we recover the result out-of-band:
+    await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body });
   } catch (err) {
-    console.warn('[googleScript] cors attempt failed, retrying no-cors:', err);
-    try {
-      await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body });
-      return { ok: true, opaque: true, note: 'Request sent (opaque response — check your inbox/Drive).' };
-    } catch (err2) {
-      return { ok: false, error: String(err2) };
-    }
+    console.warn('[googleScript] POST failed:', err);
+    return { ok: false, error: String(err) };
   }
+
+    // Best-effort result recovery: poll Drive for the newest matching Doc.
+    // Works only if you've also deployed the small `listRecent` GET action in
+    // Code.gs (see appsScript/Code.gs.js). Falls back to the opaque notice.
+    if (payload?.action === 'createDoc' && payload.title) {
+      const found = await findDocByTitle(payload.title);
+      if (found) return found;
+    }
+
+    return { ok: true, opaque: true, note: 'Request sent (opaque response — check your inbox/Drive).' };
+}
+
+/** Poll Drive (via the Apps Script GET endpoint) for a doc created just now. */
+async function findDocByTitle(title) {
+  const params = new URLSearchParams({ action: 'listRecent', title });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await new Promise((r) => setTimeout(r, 2500)); // Docs take a beat to index
+    try {
+      const res = await fetch(`${GOOGLE_SCRIPT_URL}?${params.toString()}`);
+      const data = await res.json();
+      const hit = Array.isArray(data?.docs) && data.docs.length ? data.docs[0] : null;
+      if (hit?.docUrl) return { ok: true, docUrl: hit.docUrl, editUrl: hit.editUrl };
+    } catch { /* cross-origin GET may be blocked — that's fine, keep trying/fallback */ }
+  }
+  return null;
 }
 
 /** Create a Google Doc preview. Resolves with { docUrl, editUrl } on success. */

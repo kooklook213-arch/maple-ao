@@ -31,8 +31,9 @@ async function runGoogleAction(cmd, push, speak) {
     push({ role: 'system', text: `Creating “${title}” in Google Docs…` });
     // Exact payload shape required by the Apps Script Web App:
     const res = await createDocPreview(title, content);
-    if (res?.docUrl) {
-      push({ role: 'doc', title, url: res.docUrl, editUrl: res.editUrl });
+    const url = res?.docUrl || res?.editUrl || null; // Apps Script may return either key
+    if (url) {
+      push({ role: 'doc', title, url, editUrl: res.editUrl });
       speak('Your document is ready — I’ve pinned the preview right here.');
     } else if (res?.opaque) {
       push({ role: 'agent', text: 'Request sent to Google. The response was opaque (browser CORS), so check your Drive for the new doc.' });

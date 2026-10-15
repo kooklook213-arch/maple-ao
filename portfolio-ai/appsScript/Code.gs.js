@@ -34,10 +34,37 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, service: 'aether-agent' }))
-    .setMimeType(ContentService.MimeType.JSON);
+/**
+ * GET support. The browser POST to /exec is opaque (Apps Script redirect has
+ * no CORS headers), so the sidebar polls this endpoint after "createDoc" to
+ * recover the new document's URL:  ?action=listRecent&title=<doc title>
+ */
+function doGet(e) {
+  var params = (e && e.parameter) || {};
+  if (params.action === 'listRecent') {
+    try {
+      var docs = [];
+      var files = DriveApp.getFilesByName(params.title || 'AI Project Summary');
+      var n = 0;
+      while (files.hasNext() && n < 5) {
+        var f = files.next();
+        docs.push({
+          name: f.getName(),
+          docUrl: 'https://docs.google.com/document/d/' + f.getId() + '/preview',
+          editUrl: 'https://docs.google.com/document/d/' + f.getId() + '/edit'
+        });
+        n++;
+      }
+      return json_({ ok: true, docs: docs });
+    } catch (err) {
+      return json_({ ok: false, error: String(err) });
+    }
+  }
+  return json_({ ok: true, service: 'aether-agent' });
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Creates a Google Doc from markdown-ish text and returns its shareable URLs. */

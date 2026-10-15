@@ -17,6 +17,7 @@ export default function useSpeech({ lang = 'en-US', onFinal = () => {}, onPartia
   const [interim, setInterim] = useState('');
   const [error, setError] = useState(null);
   const recRef = useRef(null);
+  const interimRef = useRef(''); // always-current interim text (refs avoid stale closures in onend)
   const audioCtxRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(0);
@@ -86,38 +87,60 @@ export default function useSpeech({ lang = 'en-US', onFinal = () => {}, onPartia
 
     setError(null);
     gotResultRef.current = false;
+    interimRef.current = '';
 
     const rec = new SR();
     rec.lang = lang;
     // continuous:true keeps Chrome's recognizer alive across pauses between
     // words (with continuous:false Chrome often times out before you finish).
+    // iOS Safari ignores it and auto-stops — our onend interim-dispatch covers that.
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
     rec.onstart = () => { listeningRef.current = true; setListening(true); setInterim(''); startMeter(); };
+    // CRITICAL: wrap the whole handler body. On iOS Safari an exception thrown
+    // inside onresult silently kills the recognizer (mic appears to "not work"
+    // with no error event at all).
     rec.onresult = (e) => {
-      gotResultRef.current = true;
-      let partial = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) {
-          const transcript = r[0].transcript.trim();
+      try {
+        gotResultRef.current = true;
+        let partial = '';
+        let finalText = null;
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) { finalText = (finalText || '') + r[0].transcript; }
+          else partial += r[0].transcript;
+        }
+        if (partial) { interimRef.current = partial; setInterim(partial); onPartialRef.current(partial); }
+        if (finalText !== null) {
+          const transcript = finalText.trim();
+          interimRef.current = '';
           // Stop capture as soon as we have a final utterance, then dispatch.
           listeningRef.current = false;
-          rec.stop();
+          try { rec.stop(); } catch { /* already stopped */ }
           setInterim('');
           if (transcript) onFinalRef.current(transcript);
-          return;
-        } else partial += r[0].transcript;
+        }
+      } catch (err) {
+        console.warn('[useSpeech] onresult handled error:', err);
       }
-      if (partial) setInterim(partial);
-      onPartialRef.current(partial);
     };
     rec.onend = () => {
       listeningRef.current = false;
       setListening(false);
       stopMeter();
+      // iOS/Safari often never fires isFinal=true — it just ends. If we built
+      // up interim text but never dispatched it, submit it now so the user's
+      // words are NOT lost (this was the main "can't talk to it" bug on iPhone).
+      const t = (interimRef.current || '').trim();
+      if (t && !gotResultRef.current) {
+        gotResultRef.current = true; // guard against double-dispatch
+        setInterim('');
+        queueMicrotask(() => { try { onFinalRef.current(t); } catch (err) { console.warn(err); } });
+      } else {
+        setInterim('');
+      }
       // Nothing heard at all (permission never granted / too quiet) -> nudge.
       if (!gotResultRef.current) {
         setError('Didn’t catch that. Check the mic permission (🔒 icon → Microphone → Allow), tap the mic again and speak.');
@@ -149,14 +172,26 @@ export default function useSpeech({ lang = 'en-US', onFinal = () => {}, onPartia
   const speak = useCallback((text, { interrupt = true } = {}) => {
     if (!('speechSynthesis' in window) || !text) return;
     if (interrupt) window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(String(text).slice(0, 700));
-    u.rate = 1.03; u.pitch = 1;
-    const voices = window.speechSynthesis.getVoices();
-    u.voice = voices.find((v) => /en[-_]US/i.test(v.lang) && /google|samantha|aria|zira/i.test(v.name)) || voices[0] || null;
-    u.onstart = () => setSpeaking(true);
-    u.onend = () => setSpeaking(false);
-    u.onerror = () => setSpeaking(false);
-    window.speechSynthesis.speak(u);
+    const doSpeak = () => {
+      const u = new SpeechSynthesisUtterance(String(text).slice(0, 700));
+      u.rate = 1.03; u.pitch = 1;
+      const voices = window.speechSynthesis.getVoices();
+      u.voice = voices.find((v) => /en[-_]US/i.test(v.lang) && /google|samantha|aria|zira/i.test(v.name)) || voices[0] || null;
+      u.onstart = () => setSpeaking(true);
+      u.onend = () => setSpeaking(false);
+      u.onerror = () => setSpeaking(false);
+      window.speechSynthesis.speak(u);
+    };
+    // Chrome/Safari load the voice list asynchronously — getVoices() returns
+    // [] on first call, which makes speech silent on some devices until the
+    // second utterance. Wait (briefly) for 'voiceschanged' before speaking.
+    if (window.speechSynthesis.getVoices().length > 0) doSpeak();
+    else {
+      let done = false;
+      const go = () => { if (!done) { done = true; doSpeak(); } };
+      window.speechSynthesis.addEventListener?.('voiceschanged', go, { once: true });
+      setTimeout(go, 400); // safety timeout for browsers that never fire it
+    }
   }, []);
 
   const cancelSpeech = useCallback(() => {
