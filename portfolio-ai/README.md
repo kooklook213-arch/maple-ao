@@ -103,4 +103,5 @@ your GitHub repo automatically:
 
 **Notes**
 * Voice recognition needs Chrome/Edge/Safari and HTTPS (or localhost); mic permission is requested on first tap.
+* **After deploying, re-deploy your Apps Script:** paste the updated `appsScript/Code.gs.js` into script.google.com → Deploy → *New deployment* (Web app, Execute as: me, Access: anyone). The new `doGet ?action=listRecent` handler lets the sidebar recover the `docUrl` even though browser POSTs to Apps Script return opaque responses (a CORS limitation of the /exec redirect — the doc still gets created either way; you'll see a "check your Drive" notice if recovery isn't available).
 * Apps Script must be deployed as a Web App with *Execute as: Me / Access: Anyone* for `docUrl` responses; otherwise requests are sent but the browser response is opaque (the UI tells you this).
