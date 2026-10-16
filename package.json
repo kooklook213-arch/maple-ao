@@ -1,0 +1,3 @@
+git add -A && git commit -m "Aether: 3D AI portfolio"
+git remote add origin https://kooklook213-arch.github.io/maple-ao/.git
+git push -u origin main
